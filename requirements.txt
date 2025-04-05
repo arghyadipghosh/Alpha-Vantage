@@ -1,0 +1,7 @@
+numpy
+pandas
+streamlit
+yfinance
+plotly
+python-dotenv
+agno
