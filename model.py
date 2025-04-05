@@ -162,7 +162,7 @@ st.set_page_config(page_title="Alpha Vantage", page_icon="📈", layout="wide")
 
 # Title and header
 st.markdown("""
-    <h1 style="text-align: center; color: #6c757d;">Generate personalized investment reports with the latest market insights.</h3>
+    <h1 style="text-align: center; color: #000000;">Alpha Vantage Bot</h3>
 """, unsafe_allow_html=True)
 
 # Sidebar Styling
