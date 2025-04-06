@@ -5,12 +5,63 @@ from agno.agent import Agent
 from agno.models.google import Gemini
 import plotly.graph_objects as go
 from dotenv import load_dotenv
-
+import logging
+import requests
 load_dotenv()
 
 # Set environment variable for Google API
 os.environ["GOOGLE_API_KEY"] = os.getenv("GOOGLE_API_KEY")
 os.environ['GROQ_API_KEY'] = os.getenv("GROQ_API_KEY")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler()]
+)
+
+logger = logging.getLogger(__name__)
+
+
+def get_tickers_from_api(company_names):
+    """
+    Fetches ticker symbols for multiple company names using the API:
+    https://ticker-2e1ica8b9.now.sh/keyword/{company_name}
+    
+    Args:
+        company_names (str): A comma-separated string of company names.
+    
+    Returns:
+        list: A list of ticker symbols corresponding to the input company names.
+              If a ticker is not found for a company, it will be replaced with 'None'.
+    """
+    company_list = [name.strip() for name in company_names.split(",")]
+    tickers = []
+
+    for company_name in company_list:
+        try:
+            logger.info("Fetching ticker for company: %s", company_name)
+            url = f"https://ticker-2e1ica8b9.now.sh/keyword/{company_name}"
+            response = requests.get(url)
+            
+            if response.status_code == 200:
+                data = response.json()
+                if data:
+                    # Assuming the API returns a list of results, take the first match
+                    ticker = data[0].get("symbol")
+                    tickers.append(ticker)
+                    logger.info("Found ticker for company '%s': %s", company_name, ticker)
+                else:
+                    logger.warning("No results found for company: %s", company_name)
+                    tickers.append(None)
+            else:
+                logger.error("Failed to fetch ticker for company '%s'. HTTP Status: %s", company_name, response.status_code)
+                tickers.append(None)
+        except Exception as e:
+            logger.error("Error fetching ticker for company '%s': %s", company_name, str(e))
+            tickers.append(None)
+
+    return tickers
 
 # Function to fetch and compare stock data
 def compare_stocks(symbols):
@@ -172,38 +223,47 @@ st.sidebar.markdown("""
 """, unsafe_allow_html=True)
 
 # Stock symbols input
-input_symbols = st.sidebar.text_input("Enter Stock Symbols (separated by commas)", "AAPL, TSLA, GOOG")
+input_symbols = st.sidebar.text_input("Enter Company Names (separated by commas)", "Apple, Tesla, Alphabet")
 api_key = st.sidebar.text_input("Enter your API Key (optional)", type="password")
 
-# Parse the stock symbols input
-stocks_symbols = [symbol.strip() for symbol in input_symbols.split(",")]
+# Parse the company names input
+company_names = [name.strip() for name in input_symbols.split(",")]
 
 # Generate Investment Report button
 if st.sidebar.button("Generate Investment Report"):
-    if not stocks_symbols:
-        st.sidebar.warning("Please enter at least one stock symbol.")
-    # elif not api_key:
-    #     st.sidebar.warning("Please enter your API Key.")
+    if not company_names:
+        st.sidebar.warning("Please enter at least one company name.")
     else:
-        # Generate the final report
-        report = get_final_investment_report(stocks_symbols)
+        # Fetch tickers from company names
+        tickers = get_tickers_from_api(", ".join(company_names))
         
-        # Display the report
-        st.subheader("Investment Report")
-        st.markdown(report)
+        # Filter out None values from the tickers list
+        valid_tickers = [ticker for ticker in tickers if ticker is not None]
+        
+        if not valid_tickers:
+            st.sidebar.warning("No valid tickers found for the given company names.")
+        else:
+            logger.info("Valid tickers: %s", valid_tickers)
+            
+            # Generate the final report using the valid tickers
+            report = get_final_investment_report(valid_tickers)
+            
+            # Display the report
+            st.subheader("Investment Report")
+            st.markdown(report)
+
+            # Interactive Stock Performance Chart
+            st.markdown("### 📊 Stock Performance (6-Months)")
+            stock_data = yf.download(valid_tickers, period="6mo")['Close']
+
+            fig = go.Figure()
+            for symbol in valid_tickers:
+                fig.add_trace(go.Scatter(x=stock_data.index, y=stock_data[symbol], mode='lines', name=symbol))
+
+            fig.update_layout(title="Stock Performance Over the Last 6 Months",
+                              xaxis_title="Date",
+                              yaxis_title="Price (in USD)",
+                              template="plotly_dark")
+            st.plotly_chart(fig)
 
         st.info("This report provides detailed insights, including market performance, company analysis, and investment recommendations.")
-
-        # Interactive Stock Performance Chart
-        st.markdown("### 📊 Stock Performance (6-Months)")
-        stock_data = yf.download(stocks_symbols, period="6mo")['Close']
-
-        fig = go.Figure()
-        for symbol in stocks_symbols:
-            fig.add_trace(go.Scatter(x=stock_data.index, y=stock_data[symbol], mode='lines', name=symbol))
-
-        fig.update_layout(title="Stock Performance Over the Last 6 Months",
-                          xaxis_title="Date",
-                          yaxis_title="Price (in USD)",
-                          template="plotly_dark")
-        st.plotly_chart(fig)
